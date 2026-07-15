@@ -11,3 +11,7 @@ __pycache__/
 *.pyc
 adb-diagnostics/
 reference-boot/
+inspect-KernelSU-Next/
+inspect-kernelsu-coccinelle/
+inspect-kernel-source/
+run-*/

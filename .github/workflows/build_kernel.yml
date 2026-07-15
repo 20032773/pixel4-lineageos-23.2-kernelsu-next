@@ -136,6 +136,7 @@ jobs:
           }
 
           make -j"$(nproc)" O=out-baseline ARCH=arm64 \
+            KBUILD_SYMTYPES=1 \
             CC=clang \
             LD=ld.lld \
             AR=llvm-ar \
@@ -151,6 +152,8 @@ jobs:
 
           test -s out-baseline/Module.symvers
           test -s out-baseline/arch/arm64/boot/Image.lz4
+          cp out-baseline/Module.symvers ../baseline-Module.symvers
+          cp out-baseline/.config ../baseline-kernel.config
           echo "baseline_symbols=$(wc -l < out-baseline/Module.symvers)" >> ../build-info.txt
 
       - name: Integrate KernelSU Next legacy
@@ -260,6 +263,9 @@ jobs:
             exit 1
           fi
 
+          python3 ../preserve_module_kabi.py include/linux/kconfig.h
+          grep -q 'Pixel 4 vendor-module kABI preservation' include/linux/kconfig.h
+
       - name: Build Image.lz4
         run: |
           set -euxo pipefail
@@ -268,6 +274,7 @@ jobs:
           test -x /usr/bin/arm-linux-gnueabi-ld.bfd
 
           make -j"$(nproc)" O=out ARCH=arm64 \
+            KBUILD_SYMTYPES=1 \
             CC=clang \
             LD=ld.lld \
             AR=llvm-ar \
@@ -291,6 +298,8 @@ jobs:
           fi
           echo "kernel_release=$(cat out/include/config/kernel.release)" >> ../build-info.txt
           grep -aFq "$KERNEL_NAME" out/arch/arm64/boot/Image
+          cp out/Module.symvers ../custom-Module.symvers
+          cp out/.config ../custom-kernel.config
 
       - name: Verify every vendor-module symbol CRC
         run: |
@@ -363,9 +372,15 @@ jobs:
             build-info.txt
             module-abi-report.txt
             clang-version.txt
+            baseline-Module.symvers
+            custom-Module.symvers
+            baseline-kernel.config
+            custom-kernel.config
             kernel-source/out/.config
             kernel-source/out/Module.symvers
             kernel-source/out-baseline/Module.symvers
+            kernel-source/out/**/*.symtypes
+            kernel-source/out-baseline/**/*.symtypes
             kernel-source/**/*.rej
           if-no-files-found: ignore
           retention-days: 14
