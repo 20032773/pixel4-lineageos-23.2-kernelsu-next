@@ -11,10 +11,12 @@ if not ROOT.exists():
 
 EVENT = ROOT / "drivers" / "kernelsu" / "sulog" / "event.c"
 EVENT_QUEUE = ROOT / "drivers" / "kernelsu" / "infra" / "event_queue.h"
+DISPATCH = ROOT / "drivers" / "kernelsu" / "supercall" / "dispatch.c"
 LINUX_TYPES = ROOT / "include" / "uapi" / "linux" / "types.h"
 
 TIMESPEC_MARKER = "Linux 4.14 boottime type compatibility"
 POLL_MARKER = "vendor kernel already defines __poll_t"
+SCHED_MARKER = "Linux 4.14 scheduler declarations"
 
 
 def patch_timespec() -> None:
@@ -67,8 +69,33 @@ typedef unsigned int __poll_t;
     print("[+] Removed duplicate KernelSU Next __poll_t typedef")
 
 
+def patch_scheduler_includes() -> None:
+    source = DISPATCH.read_text(encoding="utf-8")
+    if SCHED_MARKER in source:
+        print("[*] KernelSU Next scheduler declarations are already included")
+        return
+
+    old = "#include <linux/thread_info.h>"
+    if source.count(old) != 1:
+        raise RuntimeError(
+            "dispatch scheduler include point: expected exactly one upstream match, "
+            f"found {source.count(old)}"
+        )
+
+    new = """#include <linux/thread_info.h>
+/* Linux 4.14 scheduler declarations */
+#include <linux/sched/signal.h>
+#include <linux/sched/task.h>"""
+    DISPATCH.write_text(source.replace(old, new, 1), encoding="utf-8")
+    print("[+] Added Linux 4.14 scheduler declarations to KernelSU dispatch")
+
+
 def main() -> int:
-    missing = [path for path in (EVENT, EVENT_QUEUE, LINUX_TYPES) if not path.is_file()]
+    missing = [
+        path
+        for path in (EVENT, EVENT_QUEUE, DISPATCH, LINUX_TYPES)
+        if not path.is_file()
+    ]
     if missing:
         print("error: missing required files: " + ", ".join(map(str, missing)), file=sys.stderr)
         return 1
@@ -76,6 +103,7 @@ def main() -> int:
     try:
         patch_timespec()
         patch_poll_type()
+        patch_scheduler_includes()
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

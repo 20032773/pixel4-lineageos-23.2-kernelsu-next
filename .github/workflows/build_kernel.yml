@@ -172,7 +172,7 @@ jobs:
             exit 1
           fi
 
-      - name: Build Image.lz4 and device trees
+      - name: Build Image.lz4
         run: |
           set -euxo pipefail
           cd kernel-source
@@ -191,7 +191,7 @@ jobs:
             CLANG_PREFIX32=--prefix=/usr/bin/arm-linux-gnueabi- \
             CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=/usr/bin/arm-linux-gnueabi- \
-            Image.lz4 dtbs 2>&1 | tee ../build.log
+            Image.lz4 2>&1 | tee ../build.log
 
           test -s out/arch/arm64/boot/Image.lz4
           grep -aFq "$KERNEL_NAME" out/arch/arm64/boot/Image
