@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: pixel4-flame-kernel-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   KERNEL_REPO: https://github.com/LineageOS/android_kernel_google_msm-4.14.git
