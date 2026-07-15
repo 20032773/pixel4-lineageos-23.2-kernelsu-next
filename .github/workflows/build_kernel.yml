@@ -1,17 +1,21 @@
 name: Build Pixel 4 Kernel
 
 on:
+  schedule:
+    # Pixel 4 nightlies are normally published weekly. This runs after the
+    # usual release window and still keeps the manual Run workflow button.
+    - cron: '30 2 * * 5'
   workflow_dispatch:
     inputs:
-      kernel_ref:
-        description: Kernel commit pinned to the LineageOS 20260709 flame build
+      lineage_build:
+        description: latest, a build date (YYYY-MM-DD), or an exact LineageOS ZIP filename
         required: true
-        default: 9a2ea17c379a62b4044efee9de9a14143d9bbcfa
+        default: latest
         type: string
       ksun_ref:
-        description: KernelSU Next legacy branch, tag, or commit
+        description: KernelSU Next legacy branch, tag, or exact commit
         required: true
-        default: fd093e8b879063aeb0192a3959b0652101ded623
+        default: legacy
         type: string
 
 permissions:
@@ -29,10 +33,7 @@ env:
   ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
   ANYKERNEL_COMMIT: 1c9a500dd4aa8081952523126e97eb155aed941b
   KERNEL_NAME: byya-pokemon-master
-  KERNEL_CHANNEL: lineage-23.2-20260709
-  LINEAGE_KERNEL_COMMIT: 9a2ea17c379a62b4044efee9de9a14143d9bbcfa
-  LINEAGE_BOOT_URL: https://mirrorbits.lineageos.org/full/flame/20260709/boot.img
-  LINEAGE_BOOT_SHA256: 4cac9e822bd2dbb22ac92338448a470ce8ac42657f583b7a8198f5cb9613b4f0
+  LINEAGE_API: https://download.lineageos.org/api/v2/devices/flame/builds
   AOSP_CLANG_COMMIT: 21b19c041de1f1df9b97fd9902ae5405c6cf8eb9
   AOSP_CLANG_DIR: clang-r563880c
 
@@ -68,9 +69,122 @@ jobs:
           swapon --show
           free -h
 
-      - name: Download official AOSP toolchain and clone LineageOS kernel
+      - name: Resolve the official LineageOS flame build
         env:
-          KERNEL_REF: ${{ inputs.kernel_ref }}
+          REQUESTED_LINEAGE_BUILD: ${{ inputs.lineage_build || 'latest' }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          curl --fail --location --retry 5 "$LINEAGE_API" -o lineage-builds.json
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          requested = os.environ.get("REQUESTED_LINEAGE_BUILD", "latest").strip()
+          builds = json.loads(Path("lineage-builds.json").read_text())
+          builds = [
+              build for build in builds
+              if build.get("version") == "23.2" and build.get("type") == "nightly"
+          ]
+          if not builds:
+              raise SystemExit("No LineageOS 23.2 nightly is available for flame")
+
+          builds.sort(key=lambda build: build["datetime"], reverse=True)
+          if requested.lower() == "latest":
+              selected = builds[0]
+          else:
+              matches = []
+              for build in builds:
+                  signed = next(
+                      (item for item in build["files"] if item.get("type") == "nightly"),
+                      None,
+                  )
+                  if build.get("date") == requested or (
+                      signed and signed.get("filename") == requested
+                  ):
+                      matches.append(build)
+              if len(matches) != 1:
+                  raise SystemExit(f"LineageOS flame build not found or ambiguous: {requested}")
+              selected = matches[0]
+
+          boot = next(
+              (item for item in selected["files"] if item.get("filename") == "boot.img"),
+              None,
+          )
+          signed = next(
+              (item for item in selected["files"] if item.get("type") == "nightly"),
+              None,
+          )
+          if not boot or not signed:
+              raise SystemExit("Selected build is missing boot.img or the signed ROM metadata")
+
+          values = {
+              "LINEAGE_VERSION": selected["version"],
+              "LINEAGE_BUILD_DATE": selected["date"],
+              "LINEAGE_BUILD_FILENAME": signed["filename"],
+              "LINEAGE_BUILD_SHA256": signed["sha256"],
+              "LINEAGE_BOOT_URL": boot["url"],
+              "LINEAGE_BOOT_SHA256": boot["sha256"],
+              "KERNEL_CHANNEL": f"lineage-{selected['version']}-{selected['date'].replace('-', '')}",
+              "ARTIFACT_NAME": (
+                  "byya-pokemon-master-flame-lineage-"
+                  f"{selected['version']}-{selected['date'].replace('-', '')}-KernelSU-Next"
+              ),
+          }
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              for key, value in values.items():
+                  env_file.write(f"{key}={value}\n")
+          Path("lineage.env").write_text(
+              "".join(f"{key}={value}\n" for key, value in values.items()),
+              encoding="utf-8",
+          )
+          PY
+
+          source lineage.env
+          curl --fail --location --retry 5 "$LINEAGE_BOOT_URL" -o lineage-boot.img
+          echo "$LINEAGE_BOOT_SHA256  lineage-boot.img" | sha256sum --check --strict
+          curl --fail --location --retry 5 \
+            'https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/unpack_bootimg.py?format=TEXT' \
+            | base64 --decode > unpack_bootimg.py
+          python3 unpack_bootimg.py --boot_img lineage-boot.img --out lineage-boot
+          lz4 -d lineage-boot/kernel lineage-official-Image
+
+          strings lineage-official-Image > lineage-official.strings
+          OFFICIAL_VERSION="$(grep -m1 '^Linux version ' lineage-official.strings)"
+          test -n "$OFFICIAL_VERSION"
+          KERNEL_SHORT="$(printf '%s\n' "$OFFICIAL_VERSION" | sed -n 's/.*-g\([0-9a-f]\{12,40\}\).*/\1/p')"
+          test -n "$KERNEL_SHORT"
+          printf '%s\n' "$OFFICIAL_VERSION" | grep -Fq 'Android (14054515'
+          printf '%s\n' "$OFFICIAL_VERSION" | grep -Fq 'based on r563880c'
+
+          curl --fail --location --retry 5 \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/LineageOS/android_kernel_google_msm-4.14/commits/$KERNEL_SHORT" \
+            -o lineage-kernel-commit.json
+          KERNEL_COMMIT="$(python3 -c 'import json; print(json.load(open("lineage-kernel-commit.json"))["sha"])')"
+          case "$KERNEL_COMMIT" in
+            "$KERNEL_SHORT"*) ;;
+            *) echo 'error: GitHub resolved the wrong LineageOS kernel commit' >&2; exit 1 ;;
+          esac
+          {
+            echo "LINEAGE_KERNEL_COMMIT=$KERNEL_COMMIT"
+            echo "OFFICIAL_KERNEL_VERSION=$OFFICIAL_VERSION"
+          } >> "$GITHUB_ENV"
+          {
+            echo "device=Google Pixel 4 (flame)"
+            echo "kernel_name=$KERNEL_NAME"
+            echo "lineage_build=$LINEAGE_BUILD_FILENAME"
+            echo "lineage_build_sha256=$LINEAGE_BUILD_SHA256"
+            echo "lineage_boot_url=$LINEAGE_BOOT_URL"
+            echo "lineage_boot_sha256=$LINEAGE_BOOT_SHA256"
+            echo "official_kernel_version=$OFFICIAL_VERSION"
+            echo "kernel_commit=$KERNEL_COMMIT"
+          } > build-info.txt
+
+      - name: Download official AOSP toolchain and clone LineageOS kernel
         run: |
           set -euxo pipefail
           mkdir -p clang-toolchain
@@ -82,35 +196,21 @@ jobs:
           grep -q 'based on r563880c' clang-version.txt
           git init kernel-source
           git -C kernel-source remote add origin "$KERNEL_REPO"
-          git -C kernel-source fetch --depth=1 origin "$KERNEL_REF"
+          git -C kernel-source fetch --depth=1 origin "$LINEAGE_KERNEL_COMMIT"
           git -C kernel-source checkout --detach FETCH_HEAD
           test "$(git -C kernel-source rev-parse HEAD)" = "$LINEAGE_KERNEL_COMMIT"
           (cd kernel-source && scripts/setlocalversion --save-scmversion .)
           BASE_SCM_VERSION="$(cat kernel-source/.scmversion)"
           test -n "$BASE_SCM_VERSION"
           {
-            echo "device=Google Pixel 4 (flame)"
-            echo "kernel_name=$KERNEL_NAME"
-            echo "kernel_ref=$KERNEL_REF"
-            echo "kernel_commit=$(git -C kernel-source rev-parse HEAD)"
             echo "base_scm_version=$BASE_SCM_VERSION"
-            echo "lineage_boot_url=$LINEAGE_BOOT_URL"
-            echo "lineage_boot_sha256=$LINEAGE_BOOT_SHA256"
             echo "aosp_clang_commit=$AOSP_CLANG_COMMIT"
             echo "aosp_clang_dir=$AOSP_CLANG_DIR"
-          } > build-info.txt
+          } >> build-info.txt
 
       - name: Extract the exact config from official LineageOS boot.img
         run: |
           set -euxo pipefail
-          curl --fail --location --retry 5 "$LINEAGE_BOOT_URL" -o lineage-boot.img
-          echo "$LINEAGE_BOOT_SHA256  lineage-boot.img" | sha256sum --check --strict
-
-          curl --fail --location --retry 5 \
-            'https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/unpack_bootimg.py?format=TEXT' \
-            | base64 --decode > unpack_bootimg.py
-          python3 unpack_bootimg.py --boot_img lineage-boot.img --out lineage-boot
-          lz4 -d lineage-boot/kernel lineage-official-Image
           kernel-source/scripts/extract-ikconfig lineage-official-Image > lineage-official.config
 
           test -s lineage-official.config
@@ -158,7 +258,7 @@ jobs:
 
       - name: Integrate KernelSU Next legacy
         env:
-          REQUESTED_KSUN_REF: ${{ inputs.ksun_ref }}
+          REQUESTED_KSUN_REF: ${{ inputs.ksun_ref || 'legacy' }}
         run: |
           set -euxo pipefail
           KSUN_REF="$REQUESTED_KSUN_REF"
@@ -359,7 +459,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: byya-pokemon-master-flame-lineage-23.2-20260709-KernelSU-Next
+          name: ${{ env.ARTIFACT_NAME }}
           path: release/
           if-no-files-found: error
           retention-days: 30
