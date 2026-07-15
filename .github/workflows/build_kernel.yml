@@ -180,13 +180,19 @@ jobs:
 
           make -j"$(nproc)" O=out ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=/usr/bin/arm-linux-gnueabi- \
             Image.lz4 dtbs 2>&1 | tee ../build.log
 
           test -s out/arch/arm64/boot/Image.lz4
-          strings out/arch/arm64/boot/Image | grep -q "$KERNEL_NAME"
+          grep -aFq "$KERNEL_NAME" out/arch/arm64/boot/Image
 
       - name: Pack flame-only AnyKernel3 ZIP
         run: |
