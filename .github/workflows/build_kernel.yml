@@ -152,7 +152,7 @@ jobs:
           lz4 -d lineage-boot/kernel lineage-official-Image
 
           strings lineage-official-Image > lineage-official.strings
-          OFFICIAL_VERSION="$(grep -m1 '^Linux version ' lineage-official.strings)"
+          OFFICIAL_VERSION="$(grep -m1 -E '^Linux version [0-9]+\.' lineage-official.strings)"
           test -n "$OFFICIAL_VERSION"
           KERNEL_SHORT="$(printf '%s\n' "$OFFICIAL_VERSION" | sed -n 's/.*-g\([0-9a-f]\{12,40\}\).*/\1/p')"
           test -n "$KERNEL_SHORT"
