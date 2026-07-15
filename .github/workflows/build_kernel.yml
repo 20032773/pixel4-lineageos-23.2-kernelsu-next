@@ -46,9 +46,9 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            bc bison build-essential ccache coccinelle curl device-tree-compiler \
-            flex git libelf-dev libncurses5-dev libssl-dev libxml2 lz4 \
-            python3 rsync zip
+            bc binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi bison \
+            build-essential ccache coccinelle curl device-tree-compiler flex git \
+            libelf-dev libncurses5-dev libssl-dev libxml2 lz4 python3 rsync zip
 
       - name: Clone toolchain and LineageOS kernel
         env:
@@ -181,8 +181,8 @@ jobs:
           make -j"$(nproc)" O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=/usr/bin/arm-linux-gnueabi- \
             Image.lz4 dtbs 2>&1 | tee ../build.log
 
           test -s out/arch/arm64/boot/Image.lz4
