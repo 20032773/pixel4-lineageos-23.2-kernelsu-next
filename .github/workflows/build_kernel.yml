@@ -60,10 +60,10 @@ jobs:
           set -euxo pipefail
           free -h
           df -h /
-          sudo fallocate -l 12G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo fallocate -l 12G /mnt/kernelsu-build.swap
+          sudo chmod 600 /mnt/kernelsu-build.swap
+          sudo mkswap /mnt/kernelsu-build.swap
+          sudo swapon /mnt/kernelsu-build.swap
           sudo sysctl vm.swappiness=100
           swapon --show
           free -h
