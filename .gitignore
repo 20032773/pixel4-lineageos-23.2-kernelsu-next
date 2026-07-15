@@ -9,3 +9,5 @@ build-info.txt
 *.zip
 __pycache__/
 *.pyc
+adb-diagnostics/
+reference-boot/

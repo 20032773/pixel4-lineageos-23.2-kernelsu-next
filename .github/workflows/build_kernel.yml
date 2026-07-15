@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: LineageOS kernel branch, tag, or commit
+        description: Kernel commit pinned to the LineageOS 20260709 flame build
         required: true
-        default: lineage-23.2
+        default: 9a2ea17c379a62b4044efee9de9a14143d9bbcfa
         type: string
       ksun_ref:
         description: KernelSU Next legacy branch, tag, or commit
@@ -28,14 +28,19 @@ env:
   KSU_HOOKS_COMMIT: 9e30076418813fc7eaab6481da2e745dfde56249
   ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
   ANYKERNEL_COMMIT: 1c9a500dd4aa8081952523126e97eb155aed941b
-  DEFCONFIG: floral_defconfig
   KERNEL_NAME: byya-pokemon-master
+  KERNEL_CHANNEL: lineage-23.2-20260709
+  LINEAGE_KERNEL_COMMIT: 9a2ea17c379a62b4044efee9de9a14143d9bbcfa
+  LINEAGE_BOOT_URL: https://mirrorbits.lineageos.org/full/flame/20260709/boot.img
+  LINEAGE_BOOT_SHA256: 4cac9e822bd2dbb22ac92338448a470ce8ac42657f583b7a8198f5cb9613b4f0
+  AOSP_CLANG_COMMIT: 21b19c041de1f1df9b97fd9902ae5405c6cf8eb9
+  AOSP_CLANG_DIR: clang-r563880c
 
 jobs:
   build:
     name: Build byya-pokemon-master for Pixel 4 (flame)
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout builder repository
@@ -50,13 +55,23 @@ jobs:
             build-essential ccache coccinelle curl device-tree-compiler flex git \
             libelf-dev libncurses5-dev libssl-dev libxml2 lz4 python3 rsync zip
 
-      - name: Clone toolchain and LineageOS kernel
+      - name: Download official AOSP toolchain and clone LineageOS kernel
         env:
           KERNEL_REF: ${{ inputs.kernel_ref }}
         run: |
           set -euxo pipefail
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-toolchain
-          git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_REPO" kernel-source
+          mkdir -p clang-toolchain
+          curl --fail --location --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/$AOSP_CLANG_COMMIT/$AOSP_CLANG_DIR.tar.gz" \
+            | tar -xz -C clang-toolchain
+          clang-toolchain/bin/clang --version | tee clang-version.txt
+          grep -q 'Android (14054515' clang-version.txt
+          grep -q 'based on r563880c' clang-version.txt
+          git init kernel-source
+          git -C kernel-source remote add origin "$KERNEL_REPO"
+          git -C kernel-source fetch --depth=1 origin "$KERNEL_REF"
+          git -C kernel-source checkout --detach FETCH_HEAD
+          test "$(git -C kernel-source rev-parse HEAD)" = "$LINEAGE_KERNEL_COMMIT"
           (cd kernel-source && scripts/setlocalversion --save-scmversion .)
           BASE_SCM_VERSION="$(cat kernel-source/.scmversion)"
           test -n "$BASE_SCM_VERSION"
@@ -66,7 +81,64 @@ jobs:
             echo "kernel_ref=$KERNEL_REF"
             echo "kernel_commit=$(git -C kernel-source rev-parse HEAD)"
             echo "base_scm_version=$BASE_SCM_VERSION"
+            echo "lineage_boot_url=$LINEAGE_BOOT_URL"
+            echo "lineage_boot_sha256=$LINEAGE_BOOT_SHA256"
+            echo "aosp_clang_commit=$AOSP_CLANG_COMMIT"
+            echo "aosp_clang_dir=$AOSP_CLANG_DIR"
           } > build-info.txt
+
+      - name: Extract the exact config from official LineageOS boot.img
+        run: |
+          set -euxo pipefail
+          curl --fail --location --retry 5 "$LINEAGE_BOOT_URL" -o lineage-boot.img
+          echo "$LINEAGE_BOOT_SHA256  lineage-boot.img" | sha256sum --check --strict
+
+          curl --fail --location --retry 5 \
+            'https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/unpack_bootimg.py?format=TEXT' \
+            | base64 --decode > unpack_bootimg.py
+          python3 unpack_bootimg.py --boot_img lineage-boot.img --out lineage-boot
+          lz4 -d lineage-boot/kernel lineage-official-Image
+          kernel-source/scripts/extract-ikconfig lineage-official-Image > lineage-official.config
+
+          test -s lineage-official.config
+          grep -qx 'CONFIG_LOCALVERSION=""' lineage-official.config
+          grep -qx 'CONFIG_LOCALVERSION_AUTO=y' lineage-official.config
+          grep -qx 'CONFIG_LTO_CLANG=y' lineage-official.config
+          grep -qx '# CONFIG_THINLTO is not set' lineage-official.config
+          grep -qx 'CONFIG_CFI_CLANG=y' lineage-official.config
+          grep -qx 'CONFIG_SHADOW_CALL_STACK=y' lineage-official.config
+
+      - name: Build unmodified LineageOS ABI baseline
+        run: |
+          set -euxo pipefail
+          cd kernel-source
+          mkdir -p out-baseline
+          cp ../lineage-official.config out-baseline/.config
+          export PATH="$GITHUB_WORKSPACE/clang-toolchain/bin:$PATH"
+          make O=out-baseline ARCH=arm64 CC=clang olddefconfig
+          cmp -s ../lineage-official.config out-baseline/.config || {
+            echo 'error: kernel olddefconfig changed the official LineageOS config' >&2
+            diff -u ../lineage-official.config out-baseline/.config || true
+            exit 1
+          }
+
+          make -j"$(nproc)" O=out-baseline ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CLANG_PREFIX32=--prefix=/usr/bin/arm-linux-gnueabi- \
+            CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=/usr/bin/arm-linux-gnueabi- \
+            Image.lz4 2>&1 | tee ../baseline-build.log
+
+          test -s out-baseline/Module.symvers
+          test -s out-baseline/arch/arm64/boot/Image.lz4
+          echo "baseline_symbols=$(wc -l < out-baseline/Module.symvers)" >> ../build-info.txt
 
       - name: Integrate KernelSU Next legacy
         env:
@@ -142,8 +214,6 @@ jobs:
         run: |
           set -euxo pipefail
           cd kernel-source
-          test -f "arch/arm64/configs/$DEFCONFIG"
-
           cat > /tmp/kernelsu-next.config <<EOF
           CONFIG_LOCALVERSION=""
           CONFIG_LOCALVERSION_AUTO=y
@@ -153,14 +223,12 @@ jobs:
           # CONFIG_KSU_KPROBES_HOOK is not set
           # CONFIG_KSU_HOOK_KPROBES is not set
           # CONFIG_KSU_WITH_KPROBES is not set
-          CONFIG_KALLSYMS=y
-          CONFIG_KALLSYMS_ALL=y
-          CONFIG_THINLTO=y
+          # CONFIG_THINLTO is not set
           EOF
 
           mkdir -p out
           scripts/kconfig/merge_config.sh -m -O out \
-            "arch/arm64/configs/$DEFCONFIG" \
+            ../lineage-official.config \
             /tmp/kernelsu-next.config
 
           export PATH="$GITHUB_WORKSPACE/clang-toolchain/bin:$PATH"
@@ -171,11 +239,9 @@ jobs:
           grep -qx 'CONFIG_KSU=y' out/.config
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           grep -qx '# CONFIG_KSU_DEBUG is not set' out/.config
-          grep -qx 'CONFIG_KALLSYMS=y' out/.config
-          grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
           grep -qx 'CONFIG_LTO_CLANG=y' out/.config
           grep -qx 'CONFIG_CFI_CLANG=y' out/.config
-          grep -qx 'CONFIG_THINLTO=y' out/.config
+          grep -qx '# CONFIG_THINLTO is not set' out/.config
           if grep -Eq '^CONFIG_KSU_(KPROBES_HOOK|HOOK_KPROBES|WITH_KPROBES)=y$' out/.config; then
             echo 'error: KernelSU kprobe hooks conflict with manual hooks' >&2
             exit 1
@@ -213,6 +279,17 @@ jobs:
           echo "kernel_release=$(cat out/include/config/kernel.release)" >> ../build-info.txt
           grep -aFq "$KERNEL_NAME" out/arch/arm64/boot/Image
 
+      - name: Verify every vendor-module symbol CRC
+        run: |
+          set -euxo pipefail
+          python3 verify_module_abi.py \
+            kernel-source/out-baseline/Module.symvers \
+            kernel-source/out/Module.symvers \
+            --report module-abi-report.txt
+          grep -qx 'missing_symbols=0' module-abi-report.txt
+          grep -qx 'changed_crcs=0' module-abi-report.txt
+          cat module-abi-report.txt >> build-info.txt
+
       - name: Pack flame-only AnyKernel3 ZIP
         run: |
           set -euxo pipefail
@@ -238,7 +315,7 @@ jobs:
           printf '\nsync;\nexit 0;\n' >> "$UPDATER"
 
           (cd AnyKernel3-flame && \
-            zip -r9 "../$KERNEL_NAME-flame-LineageOS-${{ inputs.kernel_ref }}-KernelSU-Next.zip" . \
+            zip -r9 "../$KERNEL_NAME-flame-LineageOS-$KERNEL_CHANNEL-KernelSU-Next.zip" . \
               -x 'README.md')
 
       - name: Collect build outputs
@@ -246,9 +323,10 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p release
-          cp "$KERNEL_NAME-flame-LineageOS-${{ inputs.kernel_ref }}-KernelSU-Next.zip" release/
+          cp "$KERNEL_NAME-flame-LineageOS-$KERNEL_CHANNEL-KernelSU-Next.zip" release/
           cp kernel-source/out/arch/arm64/boot/Image.lz4 release/
           cp kernel-source/out/.config release/kernel.config
+          cp module-abi-report.txt release/
           cp build-info.txt release/
           sha256sum release/* > release/SHA256SUMS
 
@@ -256,7 +334,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: byya-pokemon-master-flame-${{ inputs.kernel_ref }}-KernelSU-Next
+          name: byya-pokemon-master-flame-lineage-23.2-20260709-KernelSU-Next
           path: release/
           if-no-files-found: error
           retention-days: 30
@@ -268,8 +346,13 @@ jobs:
           name: flame-build-failure-diagnostics
           path: |
             build.log
+            baseline-build.log
             build-info.txt
+            module-abi-report.txt
+            clang-version.txt
             kernel-source/out/.config
+            kernel-source/out/Module.symvers
+            kernel-source/out-baseline/Module.symvers
             kernel-source/**/*.rej
           if-no-files-found: ignore
           retention-days: 14
