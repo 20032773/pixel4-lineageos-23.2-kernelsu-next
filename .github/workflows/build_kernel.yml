@@ -151,6 +151,7 @@ jobs:
           # CONFIG_KSU_WITH_KPROBES is not set
           CONFIG_KALLSYMS=y
           CONFIG_KALLSYMS_ALL=y
+          CONFIG_THINLTO=y
           EOF
 
           mkdir -p out
@@ -167,6 +168,9 @@ jobs:
           grep -qx '# CONFIG_KSU_DEBUG is not set' out/.config
           grep -qx 'CONFIG_KALLSYMS=y' out/.config
           grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
+          grep -qx 'CONFIG_LTO_CLANG=y' out/.config
+          grep -qx 'CONFIG_CFI_CLANG=y' out/.config
+          grep -qx 'CONFIG_THINLTO=y' out/.config
           if grep -Eq '^CONFIG_KSU_(KPROBES_HOOK|HOOK_KPROBES|WITH_KPROBES)=y$' out/.config; then
             echo 'error: KernelSU kprobe hooks conflict with manual hooks' >&2
             exit 1
