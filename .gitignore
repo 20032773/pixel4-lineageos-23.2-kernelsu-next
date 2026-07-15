@@ -1,0 +1,10 @@
+kernel-source/
+KernelSU-Next/
+clang-toolchain/
+AnyKernel3-*/
+release/
+build.log
+build-info.txt
+*.zip
+__pycache__/
+*.pyc

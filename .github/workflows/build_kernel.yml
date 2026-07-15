@@ -1,0 +1,250 @@
+name: Build Pixel 4 Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: LineageOS kernel branch, tag, or commit
+        required: true
+        default: lineage-23.2
+        type: string
+      ksun_ref:
+        description: KernelSU Next legacy branch, tag, or commit
+        required: true
+        default: fd093e8b879063aeb0192a3959b0652101ded623
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pixel4-flame-kernel-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  KERNEL_REPO: https://github.com/LineageOS/android_kernel_google_msm-4.14.git
+  KSUN_REPO: https://github.com/KernelSU-Next/KernelSU-Next.git
+  KSU_HOOKS_REPO: https://github.com/devnoname120/kernelsu-coccinelle.git
+  KSU_HOOKS_COMMIT: 9e30076418813fc7eaab6481da2e745dfde56249
+  ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
+  ANYKERNEL_COMMIT: 1c9a500dd4aa8081952523126e97eb155aed941b
+  DEFCONFIG: floral_defconfig
+  KERNEL_NAME: byya-pokemon-master
+
+jobs:
+  build:
+    name: Build byya-pokemon-master for Pixel 4 (flame)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache coccinelle curl device-tree-compiler \
+            flex git libelf-dev libncurses5-dev libssl-dev libxml2 lz4 \
+            python3 rsync zip
+
+      - name: Clone toolchain and LineageOS kernel
+        env:
+          KERNEL_REF: ${{ inputs.kernel_ref }}
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-toolchain
+          git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_REPO" kernel-source
+          {
+            echo "device=Google Pixel 4 (flame)"
+            echo "kernel_name=$KERNEL_NAME"
+            echo "kernel_ref=$KERNEL_REF"
+            echo "kernel_commit=$(git -C kernel-source rev-parse HEAD)"
+          } > build-info.txt
+
+      - name: Integrate KernelSU Next legacy
+        env:
+          REQUESTED_KSUN_REF: ${{ inputs.ksun_ref }}
+        run: |
+          set -euxo pipefail
+          KSUN_REF="$REQUESTED_KSUN_REF"
+          test -n "$KSUN_REF"
+
+          # Keep the repository metadata: KernelSU uses it for its version code.
+          git clone --branch legacy --single-branch "$KSUN_REPO" KernelSU-Next
+          if ! git -C KernelSU-Next checkout --detach "$KSUN_REF"; then
+            git -C KernelSU-Next fetch origin "$KSUN_REF"
+            git -C KernelSU-Next checkout --detach FETCH_HEAD
+          fi
+
+          KSUN_COMMIT="$(git -C KernelSU-Next rev-parse HEAD)"
+          KSUN_GIT_COUNT="$(git -C KernelSU-Next rev-list --count HEAD)"
+          KSUN_VERSION="$((30000 + KSUN_GIT_COUNT + 200))"
+          {
+            echo "ksun_ref=$KSUN_REF"
+            echo "ksun_commit=$KSUN_COMMIT"
+            echo "ksun_version=$KSUN_VERSION"
+          } >> build-info.txt
+
+          cd kernel-source
+          ln -s ../../KernelSU-Next/kernel drivers/kernelsu
+
+          if [ ! -e include/linux/pgtable.h ]; then
+            printf '%s\n' '#include <asm/pgtable.h>' > include/linux/pgtable.h
+          fi
+
+          python3 ../patch_ksun_legacy.py
+          grep -qF 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || \
+            printf '%s\n' 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig || \
+            sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+      - name: Apply KernelSU manual hooks
+        run: |
+          set -euxo pipefail
+          cd kernel-source
+          git clone "$KSU_HOOKS_REPO" kernelsu-coccinelle
+          git -C kernelsu-coccinelle checkout --detach "$KSU_HOOKS_COMMIT"
+
+          SP_FILE="$(realpath kernelsu-coccinelle/classic-hooks/kernelsu.cocci)"
+          HOOK_FILES="$(grep -Po 'file in "\K[^"]+' "$SP_FILE" | sort -u)"
+          while IFS= read -r file; do
+            # KernelSU Next legacy does not export the obsolete devpts handler.
+            if [ "$file" = 'fs/devpts/inode.c' ]; then
+              continue
+            fi
+            spatch --very-quiet --sp-file "$SP_FILE" --in-place \
+              --linux-spacing "$file" || true
+          done <<< "$HOOK_FILES"
+          rm -rf kernelsu-coccinelle
+
+          python3 ../patch_manual_hooks.py
+
+          if grep -q 'ksu_handle_devpts' fs/devpts/inode.c; then
+            echo 'error: obsolete KernelSU devpts hook was installed' >&2
+            exit 1
+          fi
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_input_handle_event' drivers/input/input.c
+          grep -q 'ksu_handle_vfs_read' fs/read_write.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q '^int path_umount' fs/namespace.c
+          grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
+
+      - name: Configure Pixel 4 kernel
+        run: |
+          set -euxo pipefail
+          cd kernel-source
+          test -f "arch/arm64/configs/$DEFCONFIG"
+
+          cat > /tmp/kernelsu-next.config <<EOF
+          CONFIG_LOCALVERSION="-$KERNEL_NAME"
+          # CONFIG_LOCALVERSION_AUTO is not set
+          CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_HOOK=y
+          # CONFIG_KSU_DEBUG is not set
+          # CONFIG_KSU_KPROBES_HOOK is not set
+          # CONFIG_KSU_HOOK_KPROBES is not set
+          # CONFIG_KSU_WITH_KPROBES is not set
+          CONFIG_KALLSYMS=y
+          CONFIG_KALLSYMS_ALL=y
+          EOF
+
+          mkdir -p out
+          scripts/kconfig/merge_config.sh -m -O out \
+            "arch/arm64/configs/$DEFCONFIG" \
+            /tmp/kernelsu-next.config
+
+          export PATH="$GITHUB_WORKSPACE/clang-toolchain/bin:$PATH"
+          make O=out ARCH=arm64 CC=clang olddefconfig
+
+          grep -qx "CONFIG_LOCALVERSION=\"-$KERNEL_NAME\"" out/.config
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx '# CONFIG_KSU_DEBUG is not set' out/.config
+          grep -qx 'CONFIG_KALLSYMS=y' out/.config
+          grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
+          if grep -Eq '^CONFIG_KSU_(KPROBES_HOOK|HOOK_KPROBES|WITH_KPROBES)=y$' out/.config; then
+            echo 'error: KernelSU kprobe hooks conflict with manual hooks' >&2
+            exit 1
+          fi
+
+      - name: Build Image.lz4 and device trees
+        run: |
+          set -euxo pipefail
+          cd kernel-source
+          export PATH="$GITHUB_WORKSPACE/clang-toolchain/bin:$PATH"
+
+          make -j"$(nproc)" O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image.lz4 dtbs 2>&1 | tee ../build.log
+
+          test -s out/arch/arm64/boot/Image.lz4
+          strings out/arch/arm64/boot/Image | grep -q "$KERNEL_NAME"
+
+      - name: Pack flame-only AnyKernel3 ZIP
+        run: |
+          set -euxo pipefail
+          git init AnyKernel3-base
+          git -C AnyKernel3-base remote add origin "$ANYKERNEL_REPO"
+          git -C AnyKernel3-base fetch --depth=1 origin "$ANYKERNEL_COMMIT"
+          git -C AnyKernel3-base checkout --detach FETCH_HEAD
+          test "$(git -C AnyKernel3-base rev-parse HEAD)" = "$ANYKERNEL_COMMIT"
+          echo "anykernel_commit=$ANYKERNEL_COMMIT" >> build-info.txt
+
+          cp -a AnyKernel3-base AnyKernel3-flame
+          rm -rf AnyKernel3-flame/.git
+          cp kernel-source/out/arch/arm64/boot/Image.lz4 AnyKernel3-flame/
+          cp anykernel.sh AnyKernel3-flame/anykernel.sh
+
+          grep -qx 'device.name1=flame' AnyKernel3-flame/anykernel.sh
+          if grep -Eq '^device\.name[0-9]+=(coral|sunfish)$' AnyKernel3-flame/anykernel.sh; then
+            echo 'error: non-flame Pixel device was allowed by AnyKernel' >&2
+            exit 1
+          fi
+
+          UPDATER=AnyKernel3-flame/META-INF/com/google/android/update-binary
+          printf '\nsync;\nexit 0;\n' >> "$UPDATER"
+
+          (cd AnyKernel3-flame && \
+            zip -r9 "../$KERNEL_NAME-flame-LineageOS-${{ inputs.kernel_ref }}-KernelSU-Next.zip" . \
+              -x 'README.md')
+
+      - name: Collect build outputs
+        if: success()
+        run: |
+          set -euxo pipefail
+          mkdir -p release
+          cp "$KERNEL_NAME-flame-LineageOS-${{ inputs.kernel_ref }}-KernelSU-Next.zip" release/
+          cp kernel-source/out/arch/arm64/boot/Image.lz4 release/
+          cp kernel-source/out/.config release/kernel.config
+          cp build-info.txt release/
+          sha256sum release/* > release/SHA256SUMS
+
+      - name: Upload flashable build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: byya-pokemon-master-flame-${{ inputs.kernel_ref }}-KernelSU-Next
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flame-build-failure-diagnostics
+          path: |
+            build.log
+            build-info.txt
+            kernel-source/out/.config
+            kernel-source/**/*.rej
+          if-no-files-found: ignore
+          retention-days: 14
