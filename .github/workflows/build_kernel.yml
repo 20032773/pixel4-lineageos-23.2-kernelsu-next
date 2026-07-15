@@ -188,6 +188,9 @@ jobs:
           fi
 
           python3 ../patch_ksun_legacy.py
+          grep -q 'Pixel 4 kABI-compatible KernelSU filter counter' \
+            include/linux/seccomp.h
+          grep -q '^[[:space:]]*atomic_t filter_count;' include/linux/seccomp.h
           grep -qF 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || \
             printf '%s\n' 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig || \

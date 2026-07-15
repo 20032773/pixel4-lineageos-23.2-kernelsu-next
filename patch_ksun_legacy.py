@@ -13,10 +13,12 @@ EVENT = ROOT / "drivers" / "kernelsu" / "sulog" / "event.c"
 EVENT_QUEUE = ROOT / "drivers" / "kernelsu" / "infra" / "event_queue.h"
 DISPATCH = ROOT / "drivers" / "kernelsu" / "supercall" / "dispatch.c"
 LINUX_TYPES = ROOT / "include" / "uapi" / "linux" / "types.h"
+SECCOMP = ROOT / "include" / "linux" / "seccomp.h"
 
 TIMESPEC_MARKER = "Linux 4.14 boottime type compatibility"
 POLL_MARKER = "vendor kernel already defines __poll_t"
 SCHED_MARKER = "Linux 4.14 scheduler declarations"
+SECCOMP_MARKER = "Pixel 4 kABI-compatible KernelSU filter counter"
 
 
 def patch_timespec() -> None:
@@ -90,10 +92,42 @@ def patch_scheduler_includes() -> None:
     print("[+] Added Linux 4.14 scheduler declarations to KernelSU dispatch")
 
 
+def patch_seccomp_filter_counter() -> None:
+    """Use seccomp's arm64 alignment hole without changing its module CRC."""
+    source = SECCOMP.read_text(encoding="utf-8")
+    if SECCOMP_MARKER in source:
+        print("[*] KernelSU seccomp filter counter is already kABI-safe")
+        return
+
+    include_anchor = "#include <linux/thread_info.h>"
+    field_anchor = "\tint mode;"
+    if source.count(include_anchor) != 1 or source.count(field_anchor) != 1:
+        raise RuntimeError(
+            "seccomp filter counter: expected one thread_info include and one "
+            f"mode field, found {source.count(include_anchor)} and "
+            f"{source.count(field_anchor)}"
+        )
+
+    source = source.replace(
+        include_anchor,
+        include_anchor + "\n#include <linux/atomic.h>",
+        1,
+    )
+    guarded_counter = f"""\tint mode;
+#ifndef __GENKSYMS__
+\t/* {SECCOMP_MARKER}: fills the existing 4-byte arm64 alignment hole. */
+\tatomic_t filter_count;
+#endif"""
+    SECCOMP.write_text(
+        source.replace(field_anchor, guarded_counter, 1), encoding="utf-8"
+    )
+    print("[+] Added the KernelSU seccomp counter without changing module kABI")
+
+
 def main() -> int:
     missing = [
         path
-        for path in (EVENT, EVENT_QUEUE, DISPATCH, LINUX_TYPES)
+        for path in (EVENT, EVENT_QUEUE, DISPATCH, LINUX_TYPES, SECCOMP)
         if not path.is_file()
     ]
     if missing:
@@ -104,6 +138,7 @@ def main() -> int:
         patch_timespec()
         patch_poll_type()
         patch_scheduler_includes()
+        patch_seccomp_filter_counter()
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
