@@ -3,7 +3,7 @@ KernelSU-Next/
 clang-toolchain/
 AnyKernel3-*/
 release/
-release-output/
+release-output*/
 build.log
 build-info.txt
 *.zip

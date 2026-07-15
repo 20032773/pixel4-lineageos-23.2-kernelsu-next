@@ -57,11 +57,15 @@ jobs:
           set -euxo pipefail
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-toolchain
           git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_REPO" kernel-source
+          (cd kernel-source && scripts/setlocalversion --save-scmversion .)
+          BASE_SCM_VERSION="$(cat kernel-source/.scmversion)"
+          test -n "$BASE_SCM_VERSION"
           {
             echo "device=Google Pixel 4 (flame)"
             echo "kernel_name=$KERNEL_NAME"
             echo "kernel_ref=$KERNEL_REF"
             echo "kernel_commit=$(git -C kernel-source rev-parse HEAD)"
+            echo "base_scm_version=$BASE_SCM_VERSION"
           } > build-info.txt
 
       - name: Integrate KernelSU Next legacy
@@ -141,8 +145,8 @@ jobs:
           test -f "arch/arm64/configs/$DEFCONFIG"
 
           cat > /tmp/kernelsu-next.config <<EOF
-          CONFIG_LOCALVERSION="-$KERNEL_NAME"
-          # CONFIG_LOCALVERSION_AUTO is not set
+          CONFIG_LOCALVERSION=""
+          CONFIG_LOCALVERSION_AUTO=y
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_HOOK=y
           # CONFIG_KSU_DEBUG is not set
@@ -162,7 +166,8 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-toolchain/bin:$PATH"
           make O=out ARCH=arm64 CC=clang olddefconfig
 
-          grep -qx "CONFIG_LOCALVERSION=\"-$KERNEL_NAME\"" out/.config
+          grep -qx 'CONFIG_LOCALVERSION=""' out/.config
+          grep -qx 'CONFIG_LOCALVERSION_AUTO=y' out/.config
           grep -qx 'CONFIG_KSU=y' out/.config
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           grep -qx '# CONFIG_KSU_DEBUG is not set' out/.config
@@ -191,6 +196,8 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
+            KBUILD_BUILD_USER="$KERNEL_NAME" \
+            KBUILD_BUILD_HOST=PokemonMaster \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CLANG_PREFIX32=--prefix=/usr/bin/arm-linux-gnueabi- \
             CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- \
@@ -198,6 +205,12 @@ jobs:
             Image.lz4 2>&1 | tee ../build.log
 
           test -s out/arch/arm64/boot/Image.lz4
+          test -s out/include/config/kernel.release
+          if grep -Fq "$KERNEL_NAME" out/include/config/kernel.release; then
+            echo 'error: custom name leaked into module vermagic' >&2
+            exit 1
+          fi
+          echo "kernel_release=$(cat out/include/config/kernel.release)" >> ../build-info.txt
           grep -aFq "$KERNEL_NAME" out/arch/arm64/boot/Image
 
       - name: Pack flame-only AnyKernel3 ZIP

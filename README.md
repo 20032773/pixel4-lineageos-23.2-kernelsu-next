@@ -7,7 +7,8 @@
 ## 核心名稱
 
 - 顯示名稱：`byya-pokemon-master`
-- `uname` local version：`-byya-pokemon-master`
+- `/proc/version` build user：`byya-pokemon-master`
+- `uname -r`：保留乾淨 LineageOS 原始碼產生的 SCM 版本，避免破壞 `wlan.ko` 等 vendor module 的 vermagic。
 - 官方核心來源：`LineageOS/android_kernel_google_msm-4.14`
 - 核心設定：`floral_defconfig`（Pixel 4 與 Pixel 4 XL 的官方共用平台設定）
 
