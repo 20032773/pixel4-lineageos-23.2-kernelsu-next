@@ -55,6 +55,19 @@ jobs:
             build-essential ccache coccinelle curl device-tree-compiler flex git \
             libelf-dev libncurses5-dev libssl-dev libxml2 lz4 python3 rsync zip
 
+      - name: Provision swap for the official Full LTO link
+        run: |
+          set -euxo pipefail
+          free -h
+          df -h /
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo sysctl vm.swappiness=100
+          swapon --show
+          free -h
+
       - name: Download official AOSP toolchain and clone LineageOS kernel
         env:
           KERNEL_REF: ${{ inputs.kernel_ref }}
