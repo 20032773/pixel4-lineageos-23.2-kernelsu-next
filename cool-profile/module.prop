@@ -1,0 +1,6 @@
+id=byya_cool_profile
+name=byya Pixel 4 Balanced Cool Profile
+version=1.0
+versionCode=100
+author=byya-pokemon-master
+description=Balanced Pixel 4 flame CPU/GPU caps; keeps the stock thermal governor and protections enabled.
