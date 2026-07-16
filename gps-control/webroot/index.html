@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <link rel="stylesheet" href="/internal/insets.css">
+  <link rel="stylesheet" href="style.css">
+  <title>byya GPS Control</title>
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">ROOT LOCATION CONTROL</span><h1>GPS 熱開關</h1><p>停用真實 GNSS 訊號，同時保留 mock provider 使用空間。</p></header>
+    <section class="status"><span id="dot"></span><div><small>目前狀態</small><strong id="status">讀取中…</strong><code id="details"></code></div></section>
+    <section><h2>模式</h2><div class="modes">
+      <button data-mode="normal"><b>正常定位</b><span>恢復 GNSS 與 App 權限</span></button>
+      <button data-mode="gnss_block" class="accent"><b>飛行穩定</b><span>關閉真實 GNSS，保留 mock／網路定位</span></button>
+      <button data-mode="approximate"><b>弱化定位</b><span>指定 App 只允許粗略定位</span></button>
+      <button data-mode="app_block"><b>封鎖 App</b><span>指定 App 完全無法讀取位置</span></button>
+      <button data-mode="all_off" class="danger"><b>全域關閉</b><span>關閉 Android 主定位開關</span></button>
+    </div></section>
+    <section><h2>指定 App</h2><label>套件名稱<input id="package" value="com.nianticlabs.pokemongo" spellcheck="false"></label><button id="save" class="save">儲存套件</button><p class="hint">Pokémon GO 一般版：com.nianticlabs.pokemongo</p></section>
+    <aside>「飛行穩定」會偵測各裝置的 GNSS init service，不會修改定位資料。若 mock 工具失效，立即切回「正常定位」。</aside>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

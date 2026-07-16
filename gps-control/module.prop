@@ -1,0 +1,7 @@
+id=byya_gps_control
+name=byya Root GPS Control
+version=1.0
+versionCode=100
+author=byya-pokemon-master
+description=Hot-switch real GNSS, approximate location, or all location from a KernelSU WebUI.
+webuiIcon=webroot/icon.svg
