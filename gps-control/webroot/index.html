@@ -5,21 +5,40 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <link rel="stylesheet" href="/internal/insets.css">
   <link rel="stylesheet" href="style.css">
-  <title>byya GPS Control</title>
+  <title>實體 GNSS 控制</title>
 </head>
 <body>
   <main>
-    <header><span class="eyebrow">ROOT LOCATION CONTROL</span><h1>GPS 熱開關</h1><p>停用真實 GNSS 訊號，同時保留 mock provider 使用空間。</p></header>
-    <section class="status"><span id="dot"></span><div><small>目前狀態</small><strong id="status">讀取中…</strong><code id="details"></code></div></section>
-    <section><h2>模式</h2><div class="modes">
-      <button data-mode="normal"><b>正常定位</b><span>恢復 GNSS 與 App 權限</span></button>
-      <button data-mode="gnss_block" class="accent"><b>飛行穩定</b><span>關閉真實 GNSS，保留 mock／網路定位</span></button>
-      <button data-mode="approximate"><b>弱化定位</b><span>指定 App 只允許粗略定位</span></button>
-      <button data-mode="app_block"><b>封鎖 App</b><span>指定 App 完全無法讀取位置</span></button>
-      <button data-mode="all_off" class="danger"><b>全域關閉</b><span>關閉 Android 主定位開關</span></button>
-    </div></section>
-    <section><h2>指定 App</h2><label>套件名稱<input id="package" value="com.nianticlabs.pokemongo" spellcheck="false"></label><button id="save" class="save">儲存套件</button><p class="hint">Pokémon GO 一般版：com.nianticlabs.pokemongo</p></section>
-    <aside>「飛行穩定」會偵測各裝置的 GNSS init service，不會修改定位資料。若 mock 工具失效，立即切回「正常定位」。</aside>
+    <header class="hero">
+      <div class="hero-icon" aria-hidden="true">◎</div>
+      <p class="label">BYYA LOCATION LAB</p>
+      <h1>實體 GNSS<br>訊號控制</h1>
+      <p class="summary">系統定位、Google 定位與 App 權限保持開啟；只處理真實衛星來源。</p>
+    </header>
+
+    <section class="status-card" aria-live="polite">
+      <div class="status-orb" id="orb"><span></span></div>
+      <div><p class="label">目前模式</p><h2 id="status">讀取中…</h2><p id="details">正在檢查 GNSS HAL</p></div>
+    </section>
+
+    <section class="mode-group" aria-label="GNSS 模式">
+      <button data-mode="normal">
+        <span class="mode-icon">◉</span><span class="mode-copy"><strong>完整訊號</strong><small>原廠 GNSS 與 A‑GPS 全部運作</small></span><span class="check">✓</span>
+      </button>
+      <button data-mode="weaken">
+        <span class="mode-icon">◌</span><span class="mode-copy"><strong>弱化輔助</strong><small>清除 aiding data，暫停 A‑GPS 輔助服務</small></span><span class="check">✓</span>
+      </button>
+      <button data-mode="isolate" class="recommended">
+        <span class="mode-icon">⊘</span><span class="mode-copy"><strong>隔離真實 GNSS</strong><small>停止衛星 HAL，mock 定位仍可運作</small></span><span class="check">✓</span>
+      </button>
+    </section>
+
+    <section class="conditions">
+      <div><span id="location-dot"></span><p><strong>Android 定位開關</strong><small id="location-state">檢查中</small></p></div>
+      <div><span class="ok"></span><p><strong>App 定位權限</strong><small>本模組完全不修改</small></p></div>
+    </section>
+
+    <aside><strong>建議：</strong>飛行時使用「隔離真實 GNSS」。弱化模式仍可能收到衛星訊號，因此仍可能被真實位置拉回。</aside>
   </main>
   <script type="module" src="app.js"></script>
 </body>

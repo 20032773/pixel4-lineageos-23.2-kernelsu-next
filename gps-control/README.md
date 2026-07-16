@@ -1,17 +1,16 @@
-# byya Root GPS Control
+# byya Root Physical GNSS Control
 
-Portable KernelSU WebUI module for hot-switching Android location behavior.
+This KernelSU WebUI module leaves Android's master location switch and all app
+permissions untouched. It controls only physical GNSS-related init services:
 
-- Normal: restore location, GNSS services, and target-app AppOps.
-- Flight stable: stop detected real GNSS init services while leaving Android
-  location enabled for mock/network providers.
-- Approximate: deny fine location to the selected package, allow coarse.
-- App blocked: deny both fine and coarse location to the selected package.
-- All off: disable Android's master location switch.
+- **Normal:** all detected services restored.
+- **Weaken assistance:** GNSS aiding data is cleared and auxiliary services such
+  as Qualcomm `loc_launcher`/XTRA are paused. Physical satellites can still fix
+  a position, so this does not fully prevent location jumps.
+- **Isolate physical GNSS:** the detected GNSS HAL init service is stopped while
+  Android location remains enabled. Mock and network providers can continue to
+  supply locations through the framework.
 
-Default target: `com.nianticlabs.pokemongo`.
-
-GNSS service discovery is runtime-based rather than device-name-based, but ROMs
-that hide or rename their GNSS service may not support Flight stable mode. The
-controller fails without changing its saved mode when no GNSS service is found.
-Normal mode and module uninstall both attempt to restore stopped services.
+Service discovery is runtime-based for portability. Unsupported ROMs fail
+safely instead of stopping unrelated services. Uninstall restores every service
+that the module recorded as stopped.

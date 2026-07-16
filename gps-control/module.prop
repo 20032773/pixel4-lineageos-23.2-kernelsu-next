@@ -1,7 +1,7 @@
 id=byya_gps_control
 name=byya Root GPS Control
-version=1.0
-versionCode=100
+version=1.1
+versionCode=110
 author=byya-pokemon-master
-description=Hot-switch real GNSS, approximate location, or all location from a KernelSU WebUI.
+description=Keep Android location on while weakening assistance or isolating the physical GNSS HAL.
 webuiIcon=webroot/icon.svg
