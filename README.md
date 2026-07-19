@@ -1,5 +1,7 @@
 # Pixel 4 (flame) LineageOS KernelSU Next
 
+> 本專案採用 **Vibe Coding** 方式製作。
+
 這個專案使用 GitHub Actions，為 **Google Pixel 4（代號 `flame`）** 編譯
 LineageOS 23.2 的 Linux 4.14 核心，並整合 KernelSU Next。
 
