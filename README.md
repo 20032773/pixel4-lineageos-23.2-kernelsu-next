@@ -12,7 +12,7 @@
 ## 📱 支援規格與編譯內容
 
 - **系統核心**：Linux 4.14 (LineageOS 23.2 Nightly)
-- **Root 方案**：KernelSU Next (`legacy` 分支，採用手動掛鉤)
+- **Root 方案**：KernelSU Next (使用 `legacy` 分支，動態對應版本號 `30000+` / 核心層級 Root)
 - **編譯器**：官方 AOSP Clang 與 Full LTO (連結時間最佳化)
 - **模組安全校驗**：自動比對與維護核心模組 ABI (kABI)，確保 Wi-Fi 等原廠預建驅動能正常載入。
 - **刷入封裝**：產生僅允許安裝至 `flame` 的 AnyKernel3 ZIP。

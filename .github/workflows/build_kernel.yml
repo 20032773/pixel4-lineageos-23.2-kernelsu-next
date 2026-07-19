@@ -19,7 +19,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: pixel4-flame-kernel-abi-v2-${{ github.ref }}
@@ -279,6 +279,10 @@ jobs:
             echo "ksun_commit=$KSUN_COMMIT"
             echo "ksun_version=$KSUN_VERSION"
           } >> build-info.txt
+          {
+            echo "KSUN_COMMIT=$KSUN_COMMIT"
+            echo "KSUN_VERSION=$KSUN_VERSION"
+          } >> "$GITHUB_ENV"
 
           cd kernel-source
           ln -s ../../KernelSU-Next/kernel drivers/kernelsu
@@ -455,6 +459,35 @@ jobs:
           cp build-info.txt release/
           sha256sum release/* > release/SHA256SUMS
 
+          # Generate release notes markdown via python to avoid bash escaping hell
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          lineage_ver = os.environ.get("LINEAGE_VERSION", "")
+          lineage_date = os.environ.get("LINEAGE_BUILD_DATE", "")
+          kernel_commit = os.environ.get("LINEAGE_KERNEL_COMMIT", "")
+          ksun_commit = os.environ.get("KSUN_COMMIT", "")
+          ksun_version = os.environ.get("KSUN_VERSION", "")
+          checksums = Path("release/SHA256SUMS").read_text(encoding="utf-8")
+
+          note = f"""## Pixel 4 (flame) LineageOS 23.2 Custom Kernel
+
+          此版本為自動編譯，整合了 KernelSU Next (legacy 分支) 與 LineageOS 23.2。
+
+          ### 🛠️ 版本資訊
+          - **系統版本**：LineageOS {lineage_ver} ({lineage_date})
+          - **核心原始碼 Commit**：`{kernel_commit}`
+          - **KernelSU Next Commit**：`{ksun_commit}` (Version: {ksun_version})
+
+          ### 📦 檔案 SHA256 校驗碼
+          ```text
+          {checksums}
+          ```
+          """
+          Path("release/release-note.md").write_text(note, encoding="utf-8")
+          PY
+
       - name: Upload flashable build
         if: success()
         uses: actions/upload-artifact@v4
@@ -463,6 +496,21 @@ jobs:
           path: release/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.KERNEL_CHANNEL }}
+          name: Pixel 4 KernelSU Next (${{ env.LINEAGE_BUILD_DATE }})
+          body_path: release/release-note.md
+          files: |
+            release/*.zip
+            release/Image.lz4
+            release/kernel.config
+            release/module-abi-report.txt
+            release/build-info.txt
+            release/SHA256SUMS
 
       - name: Upload failure diagnostics
         if: failure()
