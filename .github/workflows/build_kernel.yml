@@ -120,6 +120,9 @@ jobs:
           if not boot or not signed:
               raise SystemExit("Selected build is missing boot.img or the signed ROM metadata")
 
+          date_no_hyphen = selected["date"].replace("-", "")
+          base_name = f"Pixel4-flame-lineageos{selected['version']}-{date_no_hyphen}-KernelSU-Next"
+          anykernel_name = f"{base_name}-AnyKernel3"
           values = {
               "LINEAGE_VERSION": selected["version"],
               "LINEAGE_BUILD_DATE": selected["date"],
@@ -127,11 +130,10 @@ jobs:
               "LINEAGE_BUILD_SHA256": signed["sha256"],
               "LINEAGE_BOOT_URL": boot["url"],
               "LINEAGE_BOOT_SHA256": boot["sha256"],
-              "KERNEL_CHANNEL": f"lineage-{selected['version']}-{selected['date'].replace('-', '')}",
-              "ARTIFACT_NAME": (
-                  "pixel4-flame-lineage-"
-                  f"{selected['version']}-{selected['date'].replace('-', '')}-KernelSU-Next"
-              ),
+              "KERNEL_CHANNEL": f"lineage-{selected['version']}-{date_no_hyphen}",
+              "BASE_NAME": base_name,
+              "ANYKERNEL_NAME": anykernel_name,
+              "ARTIFACT_NAME": anykernel_name,
           }
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
               for key, value in values.items():
@@ -444,7 +446,7 @@ jobs:
           printf '\nsync;\nexit 0;\n' >> "$UPDATER"
 
           (cd AnyKernel3-flame && \
-            zip -r9 "../$KERNEL_NAME-flame-LineageOS-$KERNEL_CHANNEL-KernelSU-Next.zip" . \
+            zip -r9 "../$ANYKERNEL_NAME.zip" . \
               -x 'README.md')
 
       - name: Collect build outputs
@@ -452,8 +454,8 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p release
-          cp "$KERNEL_NAME-flame-LineageOS-$KERNEL_CHANNEL-KernelSU-Next.zip" release/
-          cp kernel-source/out/arch/arm64/boot/Image.lz4 release/
+          cp "$ANYKERNEL_NAME.zip" release/
+          cp kernel-source/out/arch/arm64/boot/Image.lz4 "release/$BASE_NAME.lz4"
           cp kernel-source/out/.config release/kernel.config
           cp module-abi-report.txt release/
           cp build-info.txt release/
@@ -506,7 +508,7 @@ jobs:
           body_path: release/release-note.md
           files: |
             release/*.zip
-            release/Image.lz4
+            release/*.lz4
             release/kernel.config
             release/module-abi-report.txt
             release/build-info.txt
