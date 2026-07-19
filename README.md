@@ -19,25 +19,6 @@
 
 ---
 
-## ⚙️ 什麼是 ABI (應用程式二進位介面)？
-
-**ABI (Application Binary Interface)** 定義了核心與核心模組（`.ko` 驅動程式，例如 Wi-Fi、音訊、相機等）在編譯後的二進位互動標準。這包含資料結構的大小、欄位排序（offsets）以及函數呼叫的參數格式。
-
-### 為什麼 Pixel 4 編譯需要校驗 ABI？
-Google Pixel 裝置採用「核心與驅動分離」的設計：
-* **原廠預建驅動**：Wi-Fi 等許多重要硬體驅動是 Google/Qualcomm 提供的閉源二進位模組（放置在 `/vendor` 分區中）。
-* **核心模組校驗 (Module Versioning)**：為了防止模組存取到錯誤的記憶體位置導致當機，核心在啟用 `CONFIG_MODVERSIONS=y` 時，會為每個導出符號計算一個 32 位元的 **CRC 雜湊值**（記錄在 `Module.symvers`）。
-* **相容性問題**：當我們修改核心原始碼（例如啟用 KernelSU 修改了系統結構）時，這些符號的 CRC 會改變。一旦 CRC 不一致，系統在開機載入原廠 Wi-Fi 模組時就會報錯拒絕載入，導致 **Wi-Fi 損壞或功能失效**。
-* **解決方案**：本專案使用 `preserve_module_kabi.py` 在 `genksyms` 分析時隱藏 KernelSU 相關變更，並透過 `verify_module_abi.py` 在編譯完成後強制校驗 CRC，確保與官方二進位完全相容。
-
-### 為什麼編譯 Redmi K20 時不需要校驗 ABI？
-在編譯 Redmi K20 等較舊的非 Pixel 裝置核心時，通常不會遇到或不需要檢查 ABI 問題，原因如下：
-1. **靜態內建 (Statically Linked)**：許多舊裝置的 Wi-Fi 或硬體驅動直接編譯進核心映像檔（`Image` 或 `zImage-dtb`）中，而不是作為外部 `.ko` 模組載入。因此不存在執行時期載入外部模組的 ABI 校驗問題。
-2. **同步編譯 (Source-Built Modules)**：在 Redmi K20 的客製化 ROM（如 LineageOS）編譯流程中，如果驅動是模組，它們也是在 ROM 編譯時從原始碼與核心「同步編譯」出來的。刷機包會同時更新核心與相匹配的模組，所以 ABI 永遠保持一致。
-3. **未啟用 Module Versioning**：有些裝置核心可能關閉了 `CONFIG_MODVERSIONS`，允許核心強行載入 CRC 不一致的模組（雖然這在結構有實質改變時可能會引發 Kernel Panic 崩潰）。
-
----
-
 ## ⚡ 使用 GitHub Actions 編譯
 
 1. 前往 GitHub 專案頁面的 **Actions** 頁籤。
