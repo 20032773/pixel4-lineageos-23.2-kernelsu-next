@@ -32,14 +32,14 @@ env:
   KSU_HOOKS_COMMIT: 9e30076418813fc7eaab6481da2e745dfde56249
   ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
   ANYKERNEL_COMMIT: 1c9a500dd4aa8081952523126e97eb155aed941b
-  KERNEL_NAME: byya-pokemon-master
+  KERNEL_NAME: Pixel4
   LINEAGE_API: https://download.lineageos.org/api/v2/devices/flame/builds
   AOSP_CLANG_COMMIT: 21b19c041de1f1df9b97fd9902ae5405c6cf8eb9
   AOSP_CLANG_DIR: clang-r563880c
 
 jobs:
   build:
-    name: Build byya-pokemon-master for Pixel 4 (flame)
+    name: Build KernelSU Next for Pixel 4 (flame)
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -129,7 +129,7 @@ jobs:
               "LINEAGE_BOOT_SHA256": boot["sha256"],
               "KERNEL_CHANNEL": f"lineage-{selected['version']}-{selected['date'].replace('-', '')}",
               "ARTIFACT_NAME": (
-                  "byya-pokemon-master-flame-lineage-"
+                  "pixel4-flame-lineage-"
                   f"{selected['version']}-{selected['date'].replace('-', '')}-KernelSU-Next"
               ),
           }
@@ -386,7 +386,7 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             KBUILD_BUILD_USER="$KERNEL_NAME" \
-            KBUILD_BUILD_HOST=PokemonMaster \
+            KBUILD_BUILD_HOST=GitHubActions \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CLANG_PREFIX32=--prefix=/usr/bin/arm-linux-gnueabi- \
             CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- \

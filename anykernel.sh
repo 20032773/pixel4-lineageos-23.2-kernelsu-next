@@ -2,7 +2,7 @@
 # Home: https://github.com/osm0sis/AnyKernel3
 
 properties() { '
-kernel.string=byya-pokemon-master - KernelSU Next for Pixel 4 (flame)
+kernel.string=KernelSU Next for Pixel 4 (flame)
 do.devicecheck=1
 do.modules=0
 do.systemless=0
