@@ -58,3 +58,9 @@
    - 確認手機可以順利開機、**Wi-Fi 正常啟動**、核心級 KernelSU 運作無誤後，再進入 Recovery 刷入 AnyKernel3 ZIP 寫入分區。
 4. **不支援其他裝置**：請勿將此包刷入 Pixel 4 XL (`coral`) 或 Pixel 4a 等其他機種，這會導致開機失敗或裝置損壞。
 5. **免責聲明**：本專案基於個人樂趣與 Vibe Coding 開發，不提供任何形式的保固。若因使用本核心導致硬體損壞、資料遺失或鬧鐘沒響，作者概不負責。
+
+---
+
+## ⚖️ 開源協議 (License)
+
+本專案採用 **[GNU General Public License v2.0 (GPLv2)](file:///d:/googleAI/pixel4-lineageos-23.2-kernelsu-next/LICENSE)** 授權協議進行開源。
